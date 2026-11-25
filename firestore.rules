@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function callerProfile() {
+      return get(userPath(request.auth.uid)).data;
+    }
+
+    function hasAdminClaim() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+    function isFirestoreAdmin() {
+      return signedIn()
+        && exists(userPath(request.auth.uid))
+        && callerProfile().role == 'admin'
+        && callerProfile().status == 'active';
+    }
+
+    // Admin claim (custom claims) or an active admin document.
+    // Users cannot grant themselves admin: create/update rules forbid
+    // role=admin and forbid changing role. First admin is bootstrapped
+    // with the Firebase Admin SDK or Console (bypasses these rules).
+    function isAdmin() {
+      return hasAdminClaim() || isFirestoreAdmin();
+    }
+
+    function isActiveFarmer() {
+      return signedIn()
+        && exists(userPath(request.auth.uid))
+        && callerProfile().status == 'active'
+        && (callerProfile().role == 'farmer' || callerProfile().role == 'regular');
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function farmerCreateKeysValid() {
+      return request.resource.data.keys().hasAll([
+          'uid', 'fullName', 'email', 'contactNumber', 'farmLocation',
+          'municipality', 'province', 'role', 'status'
+        ])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.role == 'farmer'
+        && request.resource.data.status == 'pending'
+        && !request.resource.data.keys().hasAny(['password', 'passwordHash']);
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+
+      allow create: if isOwner(userId) && farmerCreateKeysValid();
+
+      allow update: if isOwner(userId)
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['role', 'status', 'uid', 'email']);
+
+      allow update: if isAdmin()
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.uid == resource.data.uid;
+
+      allow delete: if false;
+    }
+
+    match /assessments/{assessmentId} {
+      allow read: if isAdmin()
+        || (isActiveFarmer() && resource.data.ownerUid == request.auth.uid);
+      allow create: if isActiveFarmer()
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    match /reports/{reportId} {
+      allow read: if isAdmin()
+        || (isActiveFarmer() && resource.data.ownerUid == request.auth.uid);
+      allow create: if isActiveFarmer()
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    match /devices/{deviceId} {
+      allow read: if isAdmin()
+        || (isActiveFarmer() && resource.data.farmerId == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /system_parameters/{docId} {
+      allow read: if isAdmin() || isActiveFarmer();
+      allow write: if isAdmin();
+    }
+  }
+}

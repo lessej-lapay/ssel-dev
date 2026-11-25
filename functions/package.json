@@ -1,0 +1,13 @@
+{
+  "name": "soilsafe-admin-functions",
+  "description": "Trusted admin provisioning for SoilSAFE",
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "private": true,
+  "dependencies": {
+    "firebase-admin": "^13.0.2",
+    "firebase-functions": "^6.3.0"
+  }
+}

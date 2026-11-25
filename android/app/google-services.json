@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "420090795411",
+    "firebase_url": "https://soilsafe-app-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "soilsafe-app",
+    "storage_bucket": "soilsafe-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:420090795411:android:b6a8573c3d31ede794c466",
+        "android_client_info": {
+          "package_name": "com.example.soilsafe_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAhxma1Hvh1GJY4BbSUS9cTV6omXDmv92w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
