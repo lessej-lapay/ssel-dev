@@ -4,6 +4,17 @@ enum UserRole { farmer, admin }
 
 enum AccountStatus { pending, active, rejected, blocked }
 
+enum AccountModerationAction { approve, reject, block, unblock }
+
+extension AccountModerationActionStorage on AccountModerationAction {
+  String get storageValue => switch (this) {
+        AccountModerationAction.approve => 'approve',
+        AccountModerationAction.reject => 'reject',
+        AccountModerationAction.block => 'block',
+        AccountModerationAction.unblock => 'unblock',
+      };
+}
+
 enum AccessDestination {
   unauthenticated,
   loading,
@@ -29,6 +40,19 @@ class AppUser {
     required this.status,
     this.createdAt,
     this.updatedAt,
+    this.approvedBy,
+    this.approvedByName,
+    this.approvedAt,
+    this.rejectedBy,
+    this.rejectedByName,
+    this.rejectedAt,
+    this.rejectionReason,
+    this.blockedBy,
+    this.blockedByName,
+    this.blockedAt,
+    this.unblockedBy,
+    this.unblockedByName,
+    this.unblockedAt,
   });
 
   final String uid;
@@ -43,6 +67,19 @@ class AppUser {
   final AccountStatus status;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final String? approvedBy;
+  final String? approvedByName;
+  final DateTime? approvedAt;
+  final String? rejectedBy;
+  final String? rejectedByName;
+  final DateTime? rejectedAt;
+  final String? rejectionReason;
+  final String? blockedBy;
+  final String? blockedByName;
+  final DateTime? blockedAt;
+  final String? unblockedBy;
+  final String? unblockedByName;
+  final DateTime? unblockedAt;
 
   bool get isAdmin => role == UserRole.admin;
   bool get isFarmer => role == UserRole.farmer;
@@ -58,7 +95,7 @@ class AppUser {
   factory AppUser.fromMap(String uid, Map<String, dynamic> data) {
     return AppUser(
       uid: (data['uid'] as String?)?.trim().isNotEmpty == true
-          ? data['uid'] as String
+          ? (data['uid'] as String).trim()
           : uid,
       fullName: (data['fullName'] as String?)?.trim() ?? '',
       email: (data['email'] as String?)?.trim() ?? '',
@@ -71,6 +108,19 @@ class AppUser {
       status: accountStatusFromString(data['status'] as String?),
       createdAt: _toDate(data['createdAt']),
       updatedAt: _toDate(data['updatedAt']),
+      approvedBy: _optionalString(data['approvedBy']),
+      approvedByName: _optionalString(data['approvedByName']),
+      approvedAt: _toDate(data['approvedAt']),
+      rejectedBy: _optionalString(data['rejectedBy']),
+      rejectedByName: _optionalString(data['rejectedByName']),
+      rejectedAt: _toDate(data['rejectedAt']),
+      rejectionReason: _optionalString(data['rejectionReason']),
+      blockedBy: _optionalString(data['blockedBy']),
+      blockedByName: _optionalString(data['blockedByName']),
+      blockedAt: _toDate(data['blockedAt']),
+      unblockedBy: _optionalString(data['unblockedBy']),
+      unblockedByName: _optionalString(data['unblockedByName']),
+      unblockedAt: _toDate(data['unblockedAt']),
     );
   }
 
@@ -110,6 +160,8 @@ class AppUser {
     String? farmLocation,
     String? municipality,
     String? province,
+    AccountStatus? status,
+    String? rejectionReason,
   }) {
     return AppUser(
       uid: uid,
@@ -121,9 +173,22 @@ class AppUser {
       municipality: municipality ?? this.municipality,
       province: province ?? this.province,
       role: role,
-      status: status,
+      status: status ?? this.status,
       createdAt: createdAt,
       updatedAt: updatedAt,
+      approvedBy: approvedBy,
+      approvedByName: approvedByName,
+      approvedAt: approvedAt,
+      rejectedBy: rejectedBy,
+      rejectedByName: rejectedByName,
+      rejectedAt: rejectedAt,
+      rejectionReason: rejectionReason ?? this.rejectionReason,
+      blockedBy: blockedBy,
+      blockedByName: blockedByName,
+      blockedAt: blockedAt,
+      unblockedBy: unblockedBy,
+      unblockedByName: unblockedByName,
+      unblockedAt: unblockedAt,
     );
   }
 }
@@ -216,4 +281,10 @@ DateTime? _toDate(Object? value) {
   if (value is Timestamp) return value.toDate();
   if (value is DateTime) return value;
   return null;
+}
+
+String? _optionalString(Object? value) {
+  if (value is! String) return null;
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? null : trimmed;
 }

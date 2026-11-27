@@ -9,6 +9,8 @@ import 'features/auth/data/user_repository.dart';
 import 'features/auth/presentation/auth_controller.dart';
 import 'features/auth/presentation/auth_gate.dart';
 import 'features/devices/data/device_repository.dart';
+import 'features/notifications/data/notification_repository.dart';
+import 'features/notifications/data/push_notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,10 +35,16 @@ class SoilSafeApp extends StatelessWidget {
         Provider(create: (_) => UserRepository()),
         Provider(create: (_) => DeviceRepository()),
         Provider(create: (_) => AssessmentRepository()),
+        Provider(create: (_) => NotificationRepository()),
+        Provider(
+          create: (_) => PushNotificationService(),
+          dispose: (_, service) => service.dispose(),
+        ),
         ChangeNotifierProvider(
           create: (context) => AuthController(
             authService: context.read<FirebaseAuthService>(),
             userRepository: context.read<UserRepository>(),
+            pushService: context.read<PushNotificationService>(),
           ),
         ),
       ],

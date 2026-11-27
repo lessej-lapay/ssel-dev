@@ -26,8 +26,7 @@ service cloud.firestore {
 
     // Admin claim (custom claims) or an active admin document.
     // Users cannot grant themselves admin: create/update rules forbid
-    // role=admin and forbid changing role. First admin is bootstrapped
-    // with the Firebase Admin SDK or Console (bypasses these rules).
+    // role=admin and forbid changing role, and farmers cannot change status.
     function isAdmin() {
       return hasAdminClaim() || isFirestoreAdmin();
     }
@@ -46,13 +45,66 @@ service cloud.firestore {
     function farmerCreateKeysValid() {
       return request.resource.data.keys().hasAll([
           'uid', 'fullName', 'email', 'contactNumber', 'farmLocation',
-          'municipality', 'province', 'role', 'status'
+          'municipality', 'province', 'role', 'status', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'uid', 'fullName', 'email', 'contactNumber', 'farmName',
+          'farmLocation', 'municipality', 'province', 'role', 'status',
+          'createdAt', 'updatedAt'
         ])
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.email == request.auth.token.email
         && request.resource.data.role == 'farmer'
         && request.resource.data.status == 'pending'
-        && !request.resource.data.keys().hasAny(['password', 'passwordHash']);
+        && request.resource.data.fullName is string
+        && request.resource.data.fullName.size() > 0
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && !request.resource.data.keys().hasAny([
+          'password', 'passwordHash', 'approvedBy', 'approvedAt',
+          'rejectedBy', 'rejectedAt', 'rejectionReason', 'blockedBy',
+          'blockedAt', 'unblockedBy', 'unblockedAt'
+        ]);
+    }
+
+    function isOwnPendingFarmerRegistrationNotification(notificationId) {
+      return signedIn()
+        && notificationId == ('new_registration_' + request.auth.uid)
+        && !exists(/databases/$(database)/documents/notifications/$(notificationId))
+        && exists(userPath(request.auth.uid))
+        && callerProfile().role == 'farmer'
+        && callerProfile().status == 'pending'
+        && request.resource.data.keys().hasAll([
+          'id', 'targetRole', 'farmerUid', 'farmerName', 'title',
+          'message', 'type', 'isRead', 'handled', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'id', 'targetRole', 'recipientUid', 'farmerUid', 'farmerName',
+          'farmerEmail', 'title', 'message', 'type', 'isRead', 'readAt',
+          'readBy', 'handled', 'handledStatus', 'handledAction', 'handledBy',
+          'handledAt', 'registrationDate', 'createdAt'
+        ])
+        && request.resource.data.id == notificationId
+        && request.resource.data.targetRole == 'admin'
+        && request.resource.data.recipientUid == null
+        && request.resource.data.farmerUid == request.auth.uid
+        && request.resource.data.type == 'new_registration'
+        && request.resource.data.isRead == false
+        && request.resource.data.handled == false
+        && request.resource.data.createdAt == request.time;
+    }
+
+    function isAdminCreatingFarmerNotification() {
+      return isAdmin()
+        && request.resource.data.targetRole == 'farmer'
+        && request.resource.data.recipientUid is string
+        && request.resource.data.recipientUid != request.auth.uid
+        && request.resource.data.type in [
+          'account_approved', 'account_rejected',
+          'account_blocked', 'account_unblocked'
+        ]
+        && request.resource.data.isRead == false
+        && request.resource.data.createdAt == request.time;
     }
 
     match /users/{userId} {
@@ -60,19 +112,87 @@ service cloud.firestore {
 
       allow create: if isOwner(userId) && farmerCreateKeysValid();
 
+      // Farmers may only edit their own non-privileged profile fields.
       allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'fullName', 'contactNumber', 'farmName', 'farmLocation',
+          'municipality', 'province', 'updatedAt'
+        ])
         && request.resource.data.role == resource.data.role
         && request.resource.data.status == resource.data.status
         && request.resource.data.uid == resource.data.uid
         && request.resource.data.email == resource.data.email
-        && !request.resource.data.diff(resource.data).affectedKeys()
-            .hasAny(['role', 'status', 'uid', 'email']);
+        && request.resource.data.updatedAt == request.time;
 
+      // Verified admins may moderate farmer accounts via Cloud Functions
+      // (Admin SDK) or via Firestore-rules-enforced fallback if functions
+      // are not yet deployed. Admins cannot change roles or target admins.
       allow update: if isAdmin()
+        && request.auth.uid != userId
+        && resource.data.role != 'admin'
         && request.resource.data.role == resource.data.role
-        && request.resource.data.uid == resource.data.uid;
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.status in ['active', 'rejected', 'blocked']
+        && request.resource.data.updatedAt == request.time;
 
       allow delete: if false;
+
+      match /fcmTokens/{tokenId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && request.resource.data.keys().hasAll(['token', 'updatedAt'])
+          && request.resource.data.keys().hasOnly([
+            'token', 'platform', 'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.token is string
+          && request.resource.data.token.size() > 0
+          && request.resource.data.updatedAt == request.time;
+      }
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if (resource.data.targetRole == 'admin' && isAdmin())
+        || (resource.data.targetRole == 'farmer'
+            && isOwner(resource.data.recipientUid));
+
+      // Admin notifications are created by Cloud Functions or deterministically
+      // once upon pending farmer registration; farmer status notifications are
+      // created by Cloud Functions or verified Admins.
+      allow create: if isOwnPendingFarmerRegistrationNotification(notificationId)
+        || isAdminCreatingFarmerNotification();
+
+      // Never allow clients to delete persistent notifications.
+      allow delete: if false;
+
+      // Marking as read by the authorized reader.
+      allow update: if ((resource.data.targetRole == 'admin' && isAdmin())
+          || (resource.data.targetRole == 'farmer'
+              && isOwner(resource.data.recipientUid)))
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['isRead', 'readAt', 'readBy'])
+        && request.resource.data.isRead == true
+        && request.resource.data.readAt == request.time
+        && request.resource.data.readBy == request.auth.uid;
+
+      // Verified admins may mark admin registration notifications as handled
+      // when approving or rejecting a farmer.
+      allow update: if isAdmin()
+        && resource.data.targetRole == 'admin'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'isRead', 'readAt', 'readBy', 'handled', 'handledStatus',
+          'handledAction', 'handledBy', 'handledAt'
+        ])
+        && request.resource.data.handled == true
+        && request.resource.data.handledStatus in ['active', 'rejected']
+        && request.resource.data.handledBy == request.auth.uid
+        && request.resource.data.handledAt == request.time;
+    }
+
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      // Audit logs are immutable and written exclusively by Cloud Functions.
+      allow create, update, delete: if false;
     }
 
     match /assessments/{assessmentId} {

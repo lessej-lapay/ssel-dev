@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../notifications/data/push_notification_service.dart';
 import '../data/firebase_auth_service.dart';
 import '../data/user_repository.dart';
 import '../domain/app_user.dart';
@@ -13,8 +14,10 @@ class AuthController extends ChangeNotifier {
   AuthController({
     FirebaseAuthService? authService,
     UserRepository? userRepository,
+    PushNotificationService? pushService,
   })  : _authService = authService ?? FirebaseAuthService(),
-        _userRepository = userRepository ?? UserRepository() {
+        _userRepository = userRepository ?? UserRepository(),
+        _pushService = pushService {
     _user = _authService.currentUser;
     _subscription = _authService.authStateChanges().listen(_onAuthChanged);
     if (!_authService.isReady) {
@@ -25,6 +28,7 @@ class AuthController extends ChangeNotifier {
 
   final FirebaseAuthService _authService;
   final UserRepository _userRepository;
+  final PushNotificationService? _pushService;
   StreamSubscription<User?>? _subscription;
   StreamSubscription<AppUser?>? _profileSubscription;
 
@@ -33,6 +37,7 @@ class AuthController extends ChangeNotifier {
   bool _ready = false;
   bool _profileReady = false;
   bool _isLoading = false;
+  bool _isRegistering = false;
   String? _error;
 
   User? get user => _user;
@@ -43,12 +48,17 @@ class AuthController extends ChangeNotifier {
   String? get error => _error;
   bool get isSignedIn => _user != null;
 
-  AccessDestination get destination => resolveAccess(
-        authReady: _ready,
-        profileReady: _profileReady,
-        signedIn: isSignedIn,
-        profile: _profile,
-      );
+  AccessDestination get destination {
+    if (_isRegistering && _profile == null) {
+      return AccessDestination.loading;
+    }
+    return resolveAccess(
+      authReady: _ready,
+      profileReady: _profileReady,
+      signedIn: isSignedIn,
+      profile: _profile,
+    );
+  }
 
   Future<bool> signIn({
     required String email,
@@ -57,8 +67,15 @@ class AuthController extends ChangeNotifier {
     return _run(() => _authService.signIn(email: email, password: password));
   }
 
-  Future<bool> registerFarmer(FarmerRegistration registration) {
-    return _run(() => _authService.registerFarmer(registration));
+  Future<bool> registerFarmer(FarmerRegistration registration) async {
+    _isRegistering = true;
+    notifyListeners();
+    try {
+      return await _run(() => _authService.registerFarmer(registration));
+    } finally {
+      _isRegistering = false;
+      notifyListeners();
+    }
   }
 
   Future<bool> sendPasswordReset(String email) {
@@ -81,6 +98,7 @@ class AuthController extends ChangeNotifier {
   Future<void> signOut() async {
     _error = null;
     try {
+      await _pushService?.clearForUser(_user?.uid);
       await _authService.signOut();
     } on AuthFailure catch (e) {
       _error = e.message;
@@ -100,6 +118,7 @@ class AuthController extends ChangeNotifier {
     }
     _profileReady = false;
     notifyListeners();
+    unawaited(_pushService?.syncForUser(user.uid));
     _profileSubscription = _userRepository.watchUser(user.uid).listen(
       (profile) {
         _profile = profile;

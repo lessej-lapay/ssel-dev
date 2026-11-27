@@ -10,12 +10,15 @@ import '../../auth/domain/app_user.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../farmer/presentation/farmer_profile_screen.dart';
 import '../../farmer/presentation/farmer_records_screen.dart';
+import '../../notifications/data/notification_repository.dart';
+import '../../notifications/presentation/farmer_notifications_screen.dart';
+import '../../notifications/presentation/widgets/notification_bell_button.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   static final _sampleSoil = SoilData(
-    pH: 6.2,
+    pH: 6.2,  
     moisture: 55,
     temperature: 28,
     ec: 0.8,
@@ -44,6 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthController>();
     final profile = auth.profile;
+    final farmerUid = profile?.uid ?? auth.user?.uid ?? '';
     final displayName = profile?.displayName ?? _farmerName(auth.user?.email);
 
     return Scaffold(
@@ -52,6 +56,7 @@ class _HomeScreenState extends State<HomeScreen> {
         index: _tabIndex,
         children: [
           _DashboardTab(
+            farmerUid: farmerUid,
             displayName: displayName,
             soil: HomeScreen._sampleSoil,
             onStartScan: _openSampleAnalysis,
@@ -64,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
             actionLabel: 'Start New Soil Scan',
             onAction: _openSampleAnalysis,
           ),
-          _HistoryTab(ownerUid: profile?.uid ?? auth.user?.uid ?? ''),
+          _HistoryTab(ownerUid: farmerUid),
           _ProfileTab(profile: profile, email: auth.user?.email ?? 'Farmer'),
         ],
       ),
@@ -102,11 +107,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class _DashboardTab extends StatelessWidget {
   const _DashboardTab({
+    required this.farmerUid,
     required this.displayName,
     required this.soil,
     required this.onStartScan,
   });
 
+  final String farmerUid;
   final String displayName;
   final SoilData soil;
   final VoidCallback onStartScan;
@@ -115,7 +122,7 @@ class _DashboardTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _GreetingHeader(displayName: displayName),
+        _GreetingHeader(farmerUid: farmerUid, displayName: displayName),
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
@@ -191,12 +198,15 @@ class _DashboardTab extends StatelessWidget {
 }
 
 class _GreetingHeader extends StatelessWidget {
-  const _GreetingHeader({required this.displayName});
+  const _GreetingHeader({required this.farmerUid, required this.displayName});
 
+  final String farmerUid;
   final String displayName;
 
   @override
   Widget build(BuildContext context) {
+    final notifications = context.read<NotificationRepository>();
+
     return Container(
       width: double.infinity,
       decoration: const BoxDecoration(
@@ -209,34 +219,55 @@ class _GreetingHeader extends StatelessWidget {
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-          child: Column(
+          padding: const EdgeInsets.fromLTRB(24, 12, 16, 24),
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                _greeting(),
-                style: GoogleFonts.inter(
-                  color: Colors.white.withValues(alpha: 0.9),
-                  fontSize: 15,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _greeting(),
+                      style: GoogleFonts.inter(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      displayName,
+                      style: GoogleFonts.outfit(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Your soil health overview',
+                      style: GoogleFonts.inter(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                displayName,
-                style: GoogleFonts.outfit(
-                  color: Colors.white,
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
+              if (farmerUid.isNotEmpty)
+                NotificationBellButton(
+                  tooltip: 'Notifications',
+                  unreadStream: notifications.watchFarmerUnreadCount(farmerUid),
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => FarmerNotificationsScreen(
+                          farmerUid: farmerUid,
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Your soil health overview',
-                style: GoogleFonts.inter(
-                  color: Colors.white.withValues(alpha: 0.85),
-                  fontSize: 13,
-                ),
-              ),
             ],
           ),
         ),

@@ -33,6 +33,20 @@ class AuthFailure implements Exception {
         return const AuthFailure(
           'You do not have permission to perform this action',
         );
+      case 'unauthenticated':
+        return const AuthFailure('Please sign in again to continue');
+      case 'invalid-argument':
+        return const AuthFailure('Please check the provided information');
+      case 'failed-precondition':
+        return const AuthFailure(
+          'This action cannot be completed in the account’s current state',
+        );
+      case 'not-found':
+        return const AuthFailure('The requested account could not be found');
+      case 'unavailable':
+        return const AuthFailure(
+          'Service temporarily unavailable. Check your connection and try again.',
+        );
       default:
         return const AuthFailure('Something went wrong. Please try again');
     }

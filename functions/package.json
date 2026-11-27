@@ -1,10 +1,13 @@
 {
   "name": "soilsafe-admin-functions",
-  "description": "Trusted admin provisioning for SoilSAFE",
+  "description": "Trusted admin provisioning and approval workflow for SoilSAFE",
   "engines": {
     "node": "20"
   },
   "main": "index.js",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
   "private": true,
   "dependencies": {
     "firebase-admin": "^13.0.2",
